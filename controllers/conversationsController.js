@@ -8,16 +8,20 @@ const path = require("path");
 const File = require("../models/File");
 
 async function generateAiResponse(prompt) {
-  const genAI = new GoogleGenerativeAI(
-    "AIzaSyCA8YL-sVujSPntlkoHXb5spzypTvr_vHM"
-  );
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  try {
+    const genAI = new GoogleGenerativeAI(
+      "AIzaSyCA8YL-sVujSPntlkoHXb5spzypTvr_vHM"
+    );
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text();
-  // console.log(text);
-  return text;
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    // console.log(text);
+    return text;
+  } catch {
+    return "LLama model is unavalibe now, try again later";
+  }
 }
 
 async function createMemory(question, answer) {
@@ -37,8 +41,8 @@ exports.postConversation = async (req, res) => {
   if (!req.body.userID) {
     return res.status(401).json({ msg: "user not sented" });
   }
-  const currentTimestamp = new Date().toISOString().split("T")[0];
-  console.log(currentTimestamp);
+  // const currentTimestamp = new Date().toISOString().split("T")[0];
+  const currentTimestamp = Date.now() / 1000;
 
   // need to search if user is exsting
   const newConversation = new Conversation({
@@ -55,11 +59,12 @@ exports.postConversation = async (req, res) => {
   newConversation.questions.push(req.body.prompt);
   const aiResponse = await generateAiResponse(req.body.prompt);
   newConversation.answers.push(aiResponse);
-  const question_title = await setConversationTitle(
-    req.body.prompt,
-    aiResponse
-  );
-  newConversation.title = question_title;
+  // const question_title = await setConversationTitle(
+  //   req.body.prompt,
+  //   aiResponse
+  // );
+  // newConversation.title = question_title;
+  newConversation.title = "maintence";
   newConversation
     .save()
     .then((result) => {
@@ -87,7 +92,8 @@ exports.postToConversation = async (req, res) => {
   loadedConversation.questions.push(prompt);
   const aiResponse = await generateAiResponse(prompt);
   loadedConversation.answers.push(aiResponse);
-  loadedConversation.timestamp = new Date().toISOString().split("T")[0];
+  // loadedConversation.timestamp = new Date().toISOString().split("T")[0];
+  loadedConversation.timestamp = Date.now()/1000;
   await loadedConversation.save();
   return res.status(200).json({ aiResponse: aiResponse });
 };
@@ -142,13 +148,17 @@ exports.getConversations = async (req, res) => {
 };
 
 async function setConversationTitle(question, answer) {
-  const preview =
-    "the following is a user question and answer that an AI gave. I want you to set a title to this conversation. Your response must be a maximum of three words. Don't add any explanation, only one, two, or three words that give a proper title to this conversation.";
-  const title_request =
-    preview + " The question is: " + question + " The answer is: " + answer;
-  const title = await generateAiResponse(title_request);
-  console.log(title);
-  return title;
+  try {
+    const preview =
+      "the following is a user question and answer that an AI gave. I want you to set a title to this conversation. Your response must be a maximum of three words. Don't add any explanation, only one, two, or three words that give a proper title to this conversation.";
+    const title_request =
+      preview + " The question is: " + question + " The answer is: " + answer;
+    const title = await generateAiResponse(title_request);
+    console.log(title);
+    return title;
+  } catch {
+    return "test conv";
+  }
 }
 
 //delete conversation
@@ -197,7 +207,7 @@ exports.saveConversation = async (req, res) => {
 
     const fileName = `${req.body.title}_${req.body.userID}_${req.body.conversationID}_conversation.pdf`;
     const directoryPath = path.join(__dirname, "files");
-    const filePath = path.join(__dirname, "..", "files", fileName); 
+    const filePath = path.join(__dirname, "..", "files", fileName);
 
     // Create the directory if it doesn't exist
     if (!fs.existsSync(directoryPath)) {

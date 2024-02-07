@@ -11,11 +11,11 @@ const foldersSchema = new Schema({
     type: String,
     required: true,
   },
-  path: {
+  link: {
     type: String,
     required: true,
   },
-  Files: {
+  files: {
     type: [Schema.Types.ObjectId],
     ref: "File",
   },

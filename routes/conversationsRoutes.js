@@ -15,6 +15,5 @@ router.post("/getConversations", conversationController.getConversations);
 
 router.post("/deleteConversation", conversationController.deleteConversation);
 
-router.post("/saveConversationFile", conversationController.saveConversation);
 
 module.exports = router;

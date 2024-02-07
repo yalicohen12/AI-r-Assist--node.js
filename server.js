@@ -10,6 +10,7 @@ const conversationsRoutes = require("./routes/conversationsRoutes");
 const usersRoutes = require("./routes/usersRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const foldersRoutes = require("./routes/foldersRoutes");
+const filesRoutes = require("./routes/filesRoutes");
 
 // connecting to DB
 mongoose
@@ -26,6 +27,8 @@ app.use(usersRoutes);
 app.use(conversationsRoutes);
 app.use(departmentRoutes);
 app.use(foldersRoutes);
+app.use(filesRoutes)
+
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

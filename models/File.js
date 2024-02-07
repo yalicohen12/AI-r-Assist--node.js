@@ -12,6 +12,12 @@ const filesSchema = new Schema({
   link: {
     type: String,
   },
+  owner: {
+    type: String,
+  },
+  timestamp: {
+    type: String,
+  },
 });
 
 module.exports = mongoose.model("File", filesSchema);

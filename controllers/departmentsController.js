@@ -27,7 +27,6 @@ exports.createDepartment = async (req, res) => {
       folders: [],
       code: code,
     });
-    await newDepartment.save();
 
     const libraryPath = path.join(__dirname, "../libary");
     const departmentPath = path.join(libraryPath, depName);
@@ -39,6 +38,19 @@ exports.createDepartment = async (req, res) => {
 
     await fs.mkdir(rootPath);
 
+    const folderID = new mongoose.Types.ObjectId();
+
+    const newFolder = new Folder({
+      folderID: folderID,
+      name: "root",
+      link: rootPath,
+      files: [],
+    });
+    await newFolder.save();
+
+    newDepartment.folders.push(folderID);
+
+    await newDepartment.save();
     return res.status(201).json("created Departmnet");
   } catch (err) {
     console.log(err);
