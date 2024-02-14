@@ -1,7 +1,9 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const socketIo = require("socket.io");
+const http = require("http");
 const express = require("express");
 const mongoose = require("mongoose");
 const app = express();
+
 const port = 4000;
 const cors = require("cors");
 app.use(express.json());
@@ -11,6 +13,7 @@ const usersRoutes = require("./routes/usersRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const foldersRoutes = require("./routes/foldersRoutes");
 const filesRoutes = require("./routes/filesRoutes");
+const { text } = require("pdfkit");
 
 // connecting to DB
 mongoose
@@ -27,9 +30,19 @@ app.use(usersRoutes);
 app.use(conversationsRoutes);
 app.use(departmentRoutes);
 app.use(foldersRoutes);
-app.use(filesRoutes)
+app.use(filesRoutes);
 
+// app.listen(port, () => {
+//   console.log(`Server is running on port ${port}`);
+// });
 
-app.listen(port, () => {
+// module.exports = server;
+
+const server = http.createServer(app);
+
+// const io = socketIo(server);
+// io.use(cors());
+server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+

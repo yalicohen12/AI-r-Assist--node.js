@@ -1,36 +1,12 @@
 const Conversation = require("../models/Conversation");
 const User = require("../models/User");
 const mongoose = require("mongoose");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const File = require("../models/File");
-
-async function generateAiResponse(prompt) {
-  try {
-    const genAI = new GoogleGenerativeAI(
-      "AIzaSyCA8YL-sVujSPntlkoHXb5spzypTvr_vHM"
-    );
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    // console.log(text);
-    return text;
-  } catch {
-    return "LLama model is unavalibe now, try again later";
-  }
-}
-
-async function createMemory(question, answer) {
-  const preview =
-    "the following is a user question and answer that an AI gave. I want you to set a title to this conversation. Your response must be a maximum of three words. Don't add any explanation, only one, two, or three words that give a proper title to this conversation.";
-  const title_request =
-    preview + " The question is: " + question + " The answer is: " + answer;
-  const title = await generateAiResponse(title_request);
-}
+const axios = require("axios");
+const send_prompt = require("./socket_server_send");
 
 // controller to create a conversation
 exports.postConversation = async (req, res) => {
@@ -41,10 +17,8 @@ exports.postConversation = async (req, res) => {
   if (!req.body.userID) {
     return res.status(401).json({ msg: "user not sented" });
   }
-  // const currentTimestamp = new Date().toISOString().split("T")[0];
   const currentTimestamp = Date.now() / 1000;
 
-  // need to search if user is exsting
   const newConversation = new Conversation({
     user: {
       ID: req.body.userID,
@@ -57,20 +31,19 @@ exports.postConversation = async (req, res) => {
     timestamp: currentTimestamp,
   });
   newConversation.questions.push(req.body.prompt);
-  const aiResponse = await generateAiResponse(req.body.prompt);
+
+  res.status(200).json({ conversationID: conversationID });
+
+  const aiResponse = await send_prompt(req.body.prompt);
+
   newConversation.answers.push(aiResponse);
-  // const question_title = await setConversationTitle(
-  //   req.body.prompt,
-  //   aiResponse
-  // );
-  // newConversation.title = question_title;
   newConversation.title = "maintence";
   newConversation
     .save()
     .then((result) => {
-      res
-        .status(201)
-        .json({ conversationID: conversationID, aiResponse: aiResponse });
+      // res
+      //   .status(201)
+      //   .json({ conversationID: conversationID, aiResponse: aiResponse });
     })
     .catch((error) => {
       console.error(error);
@@ -90,12 +63,16 @@ exports.postToConversation = async (req, res) => {
     return res.status(404).json({ error: "Conversation not found" });
   }
   loadedConversation.questions.push(prompt);
-  const aiResponse = await generateAiResponse(prompt);
+  // const aiResponse = await generateAiResponse(prompt);
+   res.status(200).json({ aiResponse: "error" });
+
+  const aiResponse = await send_prompt(req.body.prompt);
+
   loadedConversation.answers.push(aiResponse);
   // loadedConversation.timestamp = new Date().toISOString().split("T")[0];
-  loadedConversation.timestamp = Date.now()/1000;
+  loadedConversation.timestamp = Date.now() / 1000;
   await loadedConversation.save();
-  return res.status(200).json({ aiResponse: aiResponse });
+  // return res.status(200).json({ aiResponse: aiResponse });
 };
 
 exports.getConversation = async (req, res) => {
