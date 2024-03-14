@@ -2,18 +2,19 @@ const socketIo = require("socket.io");
 const http = require("http");
 const express = require("express");
 const mongoose = require("mongoose");
+const multer = require("multer");
 const app = express();
 
 const port = 4000;
 const cors = require("cors");
 app.use(express.json());
 app.use(cors());
+
 const conversationsRoutes = require("./routes/conversationsRoutes");
 const usersRoutes = require("./routes/usersRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const foldersRoutes = require("./routes/foldersRoutes");
 const filesRoutes = require("./routes/filesRoutes");
-const { text } = require("pdfkit");
 
 // connecting to DB
 mongoose
@@ -45,4 +46,3 @@ const server = http.createServer(app);
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
-

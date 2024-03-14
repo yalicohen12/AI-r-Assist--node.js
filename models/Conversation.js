@@ -18,12 +18,15 @@ const conversationSchema = new Schema({
   memory: {
     type: Array,
   },
+  fileID: {
+    type: String,
+  },
   title: {
     type: String,
   },
   timestamp: {
-    type: Date
-  }
+    type: Date,
+  },
 });
 
 module.exports = mongoose.model("Conversation", conversationSchema);

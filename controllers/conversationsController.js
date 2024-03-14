@@ -12,12 +12,23 @@ const send_prompt = require("./socket_server_send");
 exports.postConversation = async (req, res) => {
   const title = "untitled conversation";
   console.log("rech post conversation");
+  // console.log(req.file);
+
+  const anotation = req.body.anotation;
 
   const conversationID = new mongoose.Types.ObjectId();
   if (!req.body.userID) {
     return res.status(401).json({ msg: "user not sented" });
   }
   const currentTimestamp = Date.now() / 1000;
+
+  let fileID = "";
+
+  if (req.file) {
+    if (ensureFileIsNew(req.body.userID, req.file.originalname)) {
+      fileID = await saveFile(req.file, req.body.userID);
+    }
+  }
 
   const newConversation = new Conversation({
     user: {
@@ -29,50 +40,100 @@ exports.postConversation = async (req, res) => {
     memory: [],
     title: title,
     timestamp: currentTimestamp,
+    fileID: fileID,
   });
+
   newConversation.questions.push(req.body.prompt);
 
   res.status(200).json({ conversationID: conversationID });
 
-  const aiResponse = await send_prompt(req.body.prompt);
+  const aiResponse = await send_prompt(req.body.prompt, [], anotation);
+
+  const prompt_memo = await axios.post(
+    "http://localhost:5000/generate_memory",
+    {
+      prompt: req.body.prompt,
+    }
+  );
+
+  const ai_memo = await axios.post("http://localhost:5000/generate_memory", {
+    prompt: aiResponse,
+  });
+  newConversation.memory.push("question: " + prompt_memo.data.summary);
+
+  newConversation.memory.push("Answer: " + ai_memo.data.summary);
 
   newConversation.answers.push(aiResponse);
   newConversation.title = "maintence";
-  newConversation
-    .save()
-    .then((result) => {
-      // res
-      //   .status(201)
-      //   .json({ conversationID: conversationID, aiResponse: aiResponse });
-    })
-    .catch((error) => {
-      console.error(error);
-      res.status(500).json({ error: "Internal Server Error" });
-    });
+  await newConversation.save();
 };
 
 // controller to hanlde new question in conversation
 exports.postToConversation = async (req, res) => {
   console.log("rech post to");
-  const conversationID = req.body.conversationID;
-  const userID = req.body.userID;
-  const prompt = req.body.prompt;
+  try {
+    const conversationID = req.body.conversationID;
+    const userID = req.body.userID;
+    const prompt = req.body.prompt;
 
-  const loadedConversation = await Conversation.findOne({ conversationID });
-  if (!loadedConversation) {
-    return res.status(404).json({ error: "Conversation not found" });
+    const anotation = req.body.anotation;
+
+    const loadedConversation = await Conversation.findOne({ conversationID });
+
+    let fileID = "";
+
+    if (req.file) {
+      console.log("notice the file");
+      if (ensureFileIsNew(req.body.userID, req.file.originalname)) {
+        fileID = await saveFile(req.file, req.body.userID);
+      }
+    }
+
+    console.log("file iD is: ", fileID);
+
+    if (!loadedConversation) {
+      console.log("conversation not found");
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    loadedConversation.questions.push(prompt);
+
+    // loadedConversation.fileID = fileID.toString();
+
+    res.status(200).json({ conversationID: loadedConversation.conversationID });
+
+    console.log("mile1");
+
+    const aiResponse = await send_prompt(
+      prompt,
+      loadedConversation.memory,
+      anotation
+    );
+    console.log("mile2");
+
+    const aiResponseParsed = removeCodeBlocks(aiResponse);
+
+    const prompt_memo = await axios.post(
+      "http://localhost:5000/generate_memory",
+      {
+        prompt: req.body.prompt,
+      }
+    );
+
+    const ai_memo = await axios.post("http://localhost:5000/generate_memory", {
+      prompt: aiResponseParsed,
+    });
+    loadedConversation.memory.push("question: " + prompt_memo.data.summary);
+
+    loadedConversation.memory.push("Answer: " + ai_memo.data.summary);
+
+    loadedConversation.answers.push(aiResponse);
+
+    loadedConversation.timestamp = Date.now() / 1000;
+    await loadedConversation.save();
+  } catch (err) {
+    console.log(err);
   }
-  loadedConversation.questions.push(prompt);
-  // const aiResponse = await generateAiResponse(prompt);
-   res.status(200).json({ aiResponse: "error" });
-
-  const aiResponse = await send_prompt(req.body.prompt);
-
-  loadedConversation.answers.push(aiResponse);
-  // loadedConversation.timestamp = new Date().toISOString().split("T")[0];
-  loadedConversation.timestamp = Date.now() / 1000;
-  await loadedConversation.save();
-  // return res.status(200).json({ aiResponse: aiResponse });
 };
 
 exports.getConversation = async (req, res) => {
@@ -83,6 +144,13 @@ exports.getConversation = async (req, res) => {
   }
   const questions = loadedConversation.questions || [];
   const answers = loadedConversation.answers || [];
+
+  const fileIndicator = loadedConversation.fileID;
+  let fileName = "";
+  if (fileIndicator) {
+    fileName = await getFileName(fileIndicator);
+  }
+  // fileName = "casef.js";
   // console.log(questions)
   // console.log(answers)
 
@@ -96,7 +164,7 @@ exports.getConversation = async (req, res) => {
     messages.push({ sender: "You", value: question });
     messages.push({ sender: "LLama", value: answer });
   }
-  return res.status(200).json({ messages: messages });
+  return res.status(200).json({ messages: messages, fileName });
 };
 
 //controller to get conversations
@@ -123,20 +191,6 @@ exports.getConversations = async (req, res) => {
     };
   }
 };
-
-async function setConversationTitle(question, answer) {
-  try {
-    const preview =
-      "the following is a user question and answer that an AI gave. I want you to set a title to this conversation. Your response must be a maximum of three words. Don't add any explanation, only one, two, or three words that give a proper title to this conversation.";
-    const title_request =
-      preview + " The question is: " + question + " The answer is: " + answer;
-    const title = await generateAiResponse(title_request);
-    console.log(title);
-    return title;
-  } catch {
-    return "test conv";
-  }
-}
 
 //delete conversation
 exports.deleteConversation = async (req, res) => {
@@ -219,3 +273,78 @@ exports.saveConversation = async (req, res) => {
     return res.status(500).json(err.message);
   }
 };
+
+function removeCodeBlocks(text) {
+  const parts = text.split("```");
+
+  const filteredParts = parts.filter((part, index) => index % 2 === 0);
+
+  const cleanedResponse = filteredParts.join("");
+
+  return cleanedResponse;
+}
+
+async function saveFile(fileObj, userID) {
+  console.log("at leasr try..");
+  try {
+    const fileName = fileObj.originalname;
+
+    const dirPath = path.join(__dirname, `../libary/${userID}`);
+    await ensureDirectoryExistence(dirPath); // Function defined below
+
+    const filePath = path.join(dirPath, fileName);
+
+    const fileID = new mongoose.Types.ObjectId();
+
+    await fs.promises.writeFile(filePath, fileObj.buffer);
+
+    const newFile = new File({
+      fileID: fileID,
+      fileName: fileName,
+      link: filePath,
+    });
+    await newFile.save();
+    console.log("file saved in DB");
+    return fileID;
+  } catch (err) {
+    console.log(err);
+    return "";
+  }
+}
+async function ensureFileIsNew(userID, fileName) {
+  const dirPath = path.join(__dirname, `../libary/${userID}`);
+  const filePath = path.join(dirPath, fileName);
+  console.log(filePath);
+
+  try {
+    if (fs.existsSync(filePath)) {
+      console.log(`File '${fileName}' already exists.`);
+      return false; // File already exists
+    } else {
+      console.log(`File '${fileName}' doesn't exist.`);
+      return true; // File doesn't exist
+    }
+  } catch (err) {}
+}
+
+async function ensureDirectoryExistence(dirPath) {
+  try {
+    await fs.promises.mkdir(dirPath, { recursive: true }); // Create directories if they don't exist
+    console.log("Directory created:", dirPath);
+  } catch (err) {
+    console.error("Error creating directory:", err);
+    throw err; // Re-throw the error to propagate to the main function
+  }
+}
+
+async function getFileName(fileID) {
+  // console.log(fileID);
+  const loadedFile = await File.find({ fileID: fileID });
+  // console.log(loadedFile[0].fileName);
+
+  if (loadedFile.length === 0) {
+    return "";
+  }
+
+  return loadedFile[0].fileName;
+}

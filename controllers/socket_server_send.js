@@ -11,7 +11,7 @@ ioServer.on("connection", () => {
 });
 ioServer.listen(8080);
 
-function send_prompt(prompt) {
+function send_prompt(prompt, memory, anotation) {
   flaskSocket = io("http://localhost:5000");
 
   return new Promise((resolve, reject) => {
@@ -19,7 +19,7 @@ function send_prompt(prompt) {
 
     // Event handler for receiving generated text chunks
     flaskSocket.on("generated_text", (data) => {
-      process.stdout.write(data.text_chunk);
+      // process.stdout.write(data.text_chunk);
       aiResponseChunks.push(data.text_chunk);
       ioServer.emit("generated_text", data.text_chunk);
     });
@@ -35,7 +35,7 @@ function send_prompt(prompt) {
       reject(error);
     });
 
-    flaskSocket.emit("generate_text", { prompt });
+    flaskSocket.emit("generate_text", { prompt, memory, anotation });
   });
 }
 
