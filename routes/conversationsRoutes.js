@@ -28,4 +28,8 @@ router.post("/getConversations", conversationController.getConversations);
 
 router.post("/deleteConversation", conversationController.deleteConversation);
 
+router.post("/deleteMessage", conversationController.deleteMessage);
+
+router.post("/regenerateResponse", conversationController.regenerateResponse);
+
 module.exports = router;
