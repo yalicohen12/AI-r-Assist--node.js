@@ -458,17 +458,20 @@ exports.saveConversation = async (req, res) => {
 exports.renameConversation = async (req, res) => {
   const conversationID = req.body.conversationID;
   const userID = req.body.userID;
+  console.log("renaming conversation: ", conversationID);
 
   const loadedConversation = await Conversation.findOne({
-    conversationID: req.body.conversationID,
-    "user.ID": req.body.userID,
+    conversationID: conversationID,
+    "user.ID": userID,
   });
   const newName = req.body.newName;
+  console.log("new conversation name is: ", newName);
 
   if (!newName) {
     return res.status(401).json("name not setnted");
   }
   loadedConversation.title = newName;
+  loadedConversation.save();
 
   return res.status(200).json("title updated");
 };
@@ -564,6 +567,32 @@ async function extractDataFromFile(filePath) {
     console.error("Error reading file:", err);
     return null;
   }
+}
+
+function validateFile(fileData) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const textLength = text.length;
+
+      // Perform your validation based on the text length
+      // For example, you can check if the text length is within a certain range
+
+      if (textLength > 0) {
+        resolve(); // Resolve if the text length is valid
+      } else {
+        reject("File is empty or invalid."); // Reject with an error message if text length is not valid
+      }
+    };
+
+    reader.onerror = () => {
+      reject("Error reading file."); // Reject with an error message if there's an error reading the file
+    };
+
+    reader.readAsText(fileData); // Read the file data as text
+  });
 }
 
 // (async () => {

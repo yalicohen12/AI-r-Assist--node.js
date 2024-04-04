@@ -32,4 +32,6 @@ router.post("/deleteMessage", conversationController.deleteMessage);
 
 router.post("/regenerateResponse", conversationController.regenerateResponse);
 
+router.post("/renameConversation", conversationController.renameConversation);
+
 module.exports = router;
