@@ -24,6 +24,8 @@ exports.postConversation = async (req, res) => {
 
   const modelStatus = req.body.modelStatus;
 
+  const fileName = req.body.fileName;
+
   let fileDetails = {};
 
   if (req.file) {
@@ -31,9 +33,21 @@ exports.postConversation = async (req, res) => {
       fileDetails = await saveFile(req.file, req.body.userID);
     }
   }
+
+  let fileDataFromName = "";
+
+  if (!req.file && fileName) {
+    console.log("notice fileName");
+    if (!(await ensureFileIsNew(req.body.userID, fileName))) {
+      let fileP = getFilePath(req.body.userID, fileName);
+
+      fileDataFromName = await extractDataFromFile(fileP);
+    }
+  }
+
   let fileData = "";
 
-  // console.log(filePath.filePath);
+  console.log(fileDetails);
 
   if (fileDetails.filePath) {
     fileData = await extractDataFromFile(fileDetails.filePath);
@@ -61,23 +75,31 @@ exports.postConversation = async (req, res) => {
   if (modelStatus === "offline") {
     console.log("reach offline");
     res.status(200).json({ conversationID: conversationID });
-    aiResponse = await send_prompt(req.body.prompt, [], anotation, fileData);
+    aiResponse = await send_prompt(
+      req.body.prompt,
+      [],
+      anotation,
+      fileData || fileDataFromName
+    );
   } else {
     console.log("reach online");
     const rawReponse = await axios.post("http://localhost:5000/APIResponse", {
       prompt: req.body.prompt,
       memory: [],
-      fileData: fileData,
+      fileData: fileData || fileDataFromName,
       anotation: anotation,
     });
     aiResponse =
       rawReponse.data.response ||
       rawReponse.data.answer ||
       rawReponse.data.error ||
+      rawReponse.data.summary ||
+      rawReponse.data ||
       "There was an Error try again Please";
     if (rawReponse.data.code) {
-      aiResponse += rawReponse.data.code;
+      aiResponse += "```" + rawReponse.data.code + "```";
     }
+    console.log("returning to user: ", aiResponse);
     res
       .status(200)
       .json({ aiResponse: aiResponse, conversationID: conversationID });
@@ -172,6 +194,8 @@ exports.postToConversation = async (req, res) => {
         rawReponse.data.answer ||
         rawReponse.data.error ||
         "There was an Error try again Please";
+
+      console.log(aiResponse);
       if (rawReponse.data.code) {
         aiResponse += rawReponse.data.code;
       }
@@ -179,7 +203,7 @@ exports.postToConversation = async (req, res) => {
         .status(200)
         .json({ aiResponse: aiResponse, conversationID: conversationID });
     }
-    console.log("ai is: ", aiResponse);
+    // console.log("ai is: ", aiResponse);
 
     const aiResponseParsed = removeCodeBlocks(aiResponse);
 
@@ -202,7 +226,7 @@ exports.postToConversation = async (req, res) => {
     loadedConversation.timestamp = Date.now() / 1000;
     await loadedConversation.save();
   } catch (err) {
-    console.log(err);
+    console.log(err.data);
   }
 };
 
@@ -500,6 +524,7 @@ async function saveFile(fileObj, userID) {
     await fs.promises.writeFile(filePath, fileObj.buffer);
 
     const newFile = new File({
+      userID: userID,
       fileID: fileID,
       fileName: fileName,
       link: filePath,
