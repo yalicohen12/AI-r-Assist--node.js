@@ -10,6 +10,7 @@ const File = require("../models/File");
 const mime = require("mime-types");
 
 exports.saveConversationToFile = async (req, res) => {
+  console.log("saving file...");
   try {
     const loadedUser = await User.find({ ID: req.body.userID });
 
@@ -30,56 +31,74 @@ exports.saveConversationToFile = async (req, res) => {
     const answers = loadedConversation.answers || [];
     const introduction = req.body.introduction;
 
-    const fileName = `${loadedConversation.title}.pdf`;
+    const fileType = req.body.fileType;
 
-    const dirPath = path.join(__dirname, `../libary/${req.body.userID}`);
-    const filePath = path.join(dirPath, fileName);
+    if (fileType === "txt") {
+      console.log("working with txt");
+      const fileName = `${req.body.title}.txt`;
+      const dirPath = path.join(__dirname, `../libary/${req.body.userID}`);
+      const filePath = path.join(dirPath, fileName);
 
-    const doc = new PDFDocument();
-    const pdfStream = fs.createWriteStream(filePath);
+      // Create directory if it doesn't exist
+      await fs.promises.mkdir(dirPath, { recursive: true }); // Use promises version of mkdir
 
-    doc.pipe(pdfStream);
+      // Write conversation content to the txt file
+      const uploadFile = await handleTxt(
+        introduction,
+        filePath,
+        questions,
+        answers
+      );
+      console.log(filePath);
 
-    doc.fontSize(18).text(introduction + "\n\n", { align: "left" });
+      const fileID = new mongoose.Types.ObjectId();
 
-    const minLength = Math.min(questions.length, answers.length);
-    for (let i = 0; i < minLength; i++) {
-      const question = `Question ${i + 1}: ${questions[i]}`;
+      if (uploadFile) {
+        // Save file details to the database
+        const newFile = new File({
+          userID: req.body.userID,
+          fileID: fileID,
+          fileName: fileName,
+          link: filePath,
+          chatIndicator: true,
+        });
+        await newFile.save();
+      } else {
+        return res
+          .status(500)
+          .json({ message: "TXT file not created successfully", filePath });
+      }
+    } else {
+      const fileName = `${req.body.title}.pdf`;
+      const dirPath = path.join(__dirname, `../libary/${req.body.userID}`);
+      const filePath = path.join(dirPath, fileName);
 
-      const answer = `Answer ${i + 1}: ${answers[i]}`;
-      doc
-        .fontSize(16)
-        .fillColor("blue")
-        .text(question + "\n\n\n");
+      const uploadFile = await handlePdf(
+        introduction,
+        filePath,
+        questions,
+        answers
+      );
+      const fileID = new mongoose.Types.ObjectId();
 
-      doc
-        .fontSize(16)
-        .fillColor("black")
-        .text(answer + "\n\n\n");
+      if (uploadFile) {
+        const newFile = new File({
+          userID: req.body.userID,
+          fileID: fileID,
+          fileName: fileName,
+          link: filePath,
+          chatIndicator: true,
+        });
+        await newFile.save();
+
+        return res
+          .status(200)
+          .json({ message: "PDF created successfully", filePath });
+      } else {
+        console.error("PDF stream error:", err);
+        return res.status(500).json("Failed to save PDF");
+      }
     }
-
-    doc.end();
-    const fileID = new mongoose.Types.ObjectId();
-
-    pdfStream.on("finish", async () => {
-      const newFile = new File({
-        userID: req.body.userID,
-        fileID: fileID,
-        fileName: fileName,
-        link: filePath,
-        chatIndicator: true,
-      });
-      await newFile.save();
-
-      return res
-        .status(200)
-        .json({ message: "PDF created successfully", filePath });
-    });
-
-    pdfStream.on("error", (err) => {
-      console.error("PDF stream error:", err);
-      return res.status(500).json("Failed to save PDF");
-    });
   } catch (err) {
     console.log(err);
     return res.status(500).json("Fail");
@@ -87,7 +106,7 @@ exports.saveConversationToFile = async (req, res) => {
 };
 
 exports.getFiles = async (req, res) => {
-  console.log("bringing files");
+  // console.log("bringing files");
   const userID = req.body.userID;
 
   if (!userID) {
@@ -110,7 +129,7 @@ exports.getFiles = async (req, res) => {
     const fileData = [];
 
     for (const file of files) {
-      const { fileID, fileName, link,chatIndicator } = file;
+      const { fileID, fileName, link, chatIndicator } = file;
       // console.log(link);
 
       const stats = await fs.promises.stat(link);
@@ -123,7 +142,7 @@ exports.getFiles = async (req, res) => {
         name: fileName,
         size: fileSize,
         type: fileType,
-        chatIndicator:chatIndicator
+        chatIndicator: chatIndicator,
       });
     }
     return res.status(200).json(fileData);
@@ -158,6 +177,16 @@ exports.deleteFile = async (req, res) => {
       return res.status(404).json("flie not found");
     }
 
+    console.log(loadedFile[0].link);
+
+    fs.unlink(loadedFile[0].link, (err) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json("internal server error");
+      }
+      console.log("File deleted successfully");
+    });
+
     await File.deleteOne({ userID: userID, fileID: fileID });
 
     return res.status(200).json("file deleted");
@@ -166,3 +195,97 @@ exports.deleteFile = async (req, res) => {
     return res.status(500).json("internal server error");
   }
 };
+
+exports.downloadFile = async (req, res) => {
+  const fileID = req.params.fileID;
+
+  try {
+    const file = await File.findOne({ fileID: fileID });
+
+    if (!file) {
+      return res.status(404).json("File not found");
+    }
+
+    const filePath = file.link;
+    const fileName = file.fileName;
+
+    console.log(fileID);
+    console.log(filePath);
+
+    // Check if the file exists
+    const fileExists = await fs.promises
+      .access(filePath)
+      .then(() => true)
+      .catch(() => false);
+
+    if (!fileExists) {
+      return res.status(404).json("File not found on the server");
+    }
+
+    // Trigger file download
+    res.download(filePath, (err) => {
+      if (err) {
+        console.error("Error downloading file:", err);
+        res.status(500).json("Error downloading file");
+      }
+    });
+  } catch (err) {
+    console.error("Error downloading file:", err);
+    res.status(500).json("Internal server error");
+  }
+};
+
+async function handlePdf(introduction, filePath, questions, answers) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument();
+    const pdfStream = fs.createWriteStream(filePath);
+
+    doc.pipe(pdfStream);
+
+    doc.fontSize(18).text(introduction + "\n\n", { align: "left" });
+
+    const minLength = Math.min(questions.length, answers.length);
+    for (let i = 0; i < minLength; i++) {
+      const question = `Question ${i + 1}: ${questions[i]}`;
+
+      const answer = `Answer ${i + 1}: ${answers[i]}`;
+      doc
+        .fontSize(16)
+        .fillColor("blue")
+        .text(question + "\n\n\n");
+
+      doc
+        .fontSize(16)
+        .fillColor("black")
+        .text(answer + "\n\n\n");
+    }
+
+    doc.end();
+
+    pdfStream.on("finish", () => {
+      resolve(true);
+    });
+
+    pdfStream.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
+
+async function handleTxt(introduction, filePath, questions, answers) {
+  try {
+    let content = `${introduction}\n\n`;
+    questions.forEach((question, index) => {
+      const answer = answers[index] || ""; // If there's no answer, leave it blank
+      content += `Question ${index + 1}: ${question}\nAnswer ${
+        index + 1
+      }: ${answer}\n\n`;
+    });
+
+    await fs.promises.writeFile(filePath, content); // Use promises version of writeFile
+    return true;
+  } catch (error) {
+    console.log(error);
+    return false;
+  }
+}

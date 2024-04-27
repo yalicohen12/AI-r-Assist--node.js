@@ -17,6 +17,9 @@ exports.postConversation = async (req, res) => {
   const anotation = req.body.anotation;
 
   const conversationID = new mongoose.Types.ObjectId();
+
+  const loadedUser = await User.findOne({ ID: req.body.userID });
+
   if (!req.body.userID) {
     return res.status(401).json({ msg: "user not sented" });
   }
@@ -29,12 +32,18 @@ exports.postConversation = async (req, res) => {
   let fileDetails = {};
 
   if (req.file) {
+    console.log("notice a new file");
     if (ensureFileIsNew(req.body.userID, req.file.originalname)) {
       fileDetails = await saveFile(req.file, req.body.userID);
     }
   }
+  let fileData = "";
 
   let fileDataFromName = "";
+
+  if (fileDetails.filePath) {
+    fileData = await extractDataFromFile(fileDetails.filePath);
+  }
 
   if (!req.file && fileName) {
     console.log("notice fileName");
@@ -42,16 +51,26 @@ exports.postConversation = async (req, res) => {
       let fileP = getFilePath(req.body.userID, fileName);
 
       fileDataFromName = await extractDataFromFile(fileP);
+
+      const fileIDFromName = await extractFileIDFromName(
+        fileName,
+        req.body.userID
+      );
+
+      fileDetails.filePath = fileIDFromName;
     }
   }
 
-  let fileData = "";
+  const conversationCounter = await getConversationsCounter(req.body.userID);
 
-  console.log(fileDetails);
+  // console.log(conversationCounter)
 
-  if (fileDetails.filePath) {
-    fileData = await extractDataFromFile(fileDetails.filePath);
-  }
+  const conversationTitle = `${loadedUser.name} Chat ${
+    conversationCounter + 1
+  } `;
+  console.log(conversationTitle);
+
+  // console.log(fileDetails);
 
   // console.log("fileD: ", fileData);
 
@@ -63,10 +82,11 @@ exports.postConversation = async (req, res) => {
     questions: [],
     answers: [],
     memory: [],
-    title: title,
+    title: conversationTitle,
     timestamp: currentTimestamp,
     fileID: fileDetails.fileID,
   });
+  console.log("model status is: ", modelStatus);
 
   newConversation.questions.push(req.body.prompt);
 
@@ -74,7 +94,9 @@ exports.postConversation = async (req, res) => {
 
   if (modelStatus === "offline") {
     console.log("reach offline");
-    res.status(200).json({ conversationID: conversationID });
+    res
+      .status(200)
+      .json({ conversationID: conversationID, title: conversationTitle });
     aiResponse = await send_prompt(
       req.body.prompt,
       [],
@@ -100,26 +122,43 @@ exports.postConversation = async (req, res) => {
       aiResponse += "```" + rawReponse.data.code + "```";
     }
     console.log("returning to user: ", aiResponse);
-    res
-      .status(200)
-      .json({ aiResponse: aiResponse, conversationID: conversationID });
+    res.status(200).json({
+      aiResponse: aiResponse,
+      conversationID: conversationID,
+      title: conversationTitle,
+    });
   }
-  const prompt_memo = await axios.post(
-    "http://localhost:5000/generate_memory",
-    {
+  let prompt_memo = "";
+  if (wordCount(req.body.prompt) > 40) {
+    prompt_memo = await axios.post("http://localhost:5000/generate_memory", {
       prompt: req.body.prompt,
-    }
+    });
+    console.log(prompt_memo.data);
+    newConversation.memorySize += wordCount(prompt_memo.data.summary);
+  } else {
+    prompt_memo = req.body.prompt;
+    newConversation.memorySize += wordCount(req.body.prompt);
+  }
+
+  let ai_memo = "";
+  if (wordCount(aiResponse) > 30) {
+    ai_memo = await axios.post("http://localhost:5000/generate_memory", {
+      prompt: aiResponse,
+    });
+  } else {
+    ai_memo = aiResponse;
+  }
+
+  newConversation.memory.push(
+    "User: " + (prompt_memo.data ? prompt_memo.data.summary : prompt_memo)
   );
 
-  const ai_memo = await axios.post("http://localhost:5000/generate_memory", {
-    prompt: aiResponse,
-  });
-  newConversation.memory.push("question: " + prompt_memo.data.summary);
-
-  newConversation.memory.push("Answer: " + ai_memo.data.summary);
+  newConversation.memory.push(
+    "LLM: " + (ai_memo.data ? ai_memo.data.summary : ai_memo)
+  );
 
   newConversation.answers.push(aiResponse);
-  newConversation.title = "maintence";
+  // newConversation.title = "maintence";
   await newConversation.save();
 };
 
@@ -139,15 +178,31 @@ exports.postToConversation = async (req, res) => {
 
     const loadedConversation = await Conversation.findOne({ conversationID });
 
+    if (!loadedConversation) {
+      return res.status(404).json("conversation not found");
+    }
+
     let fileID = "";
     let fileData = "";
+
+    let fileDetails = {};
+
+    const promptWordCount = wordCount(prompt);
+
+    if (loadedConversation.memorySize + promptWordCount > 700) {
+      handleMemoryOverflow(loadedConversation.memory);
+    }
 
     if (req.file) {
       console.log("notice the file");
       if (await ensureFileIsNew(req.body.userID, req.file.originalname)) {
-        fileID = await saveFile(req.file, req.body.userID);
+        fileDetails = await saveFile(req.file, req.body.userID);
 
-        fileData = await extractDataFromFile(fileID.filePath);
+        fileID = fileDetails.fileID;
+
+        loadedConversation.fileID = fileID;
+
+        fileData = await extractDataFromFile(fileDetails.filePath);
       }
     }
     if (!req.file && fileName) {
@@ -157,6 +212,10 @@ exports.postToConversation = async (req, res) => {
 
         fileData = await extractDataFromFile(fileP);
       }
+    }
+    let fileWordCount = 0;
+    if (fileData.length > 2) {
+      fileWordCount = wordCount(fileData);
     }
 
     if (!loadedConversation) {
@@ -169,6 +228,8 @@ exports.postToConversation = async (req, res) => {
     // loadedConversation.fileID = fileID.toString();
 
     let aiResponse = "";
+
+    // console.log("sending file data of: ", fileData);
 
     if (modelStatus === "offline") {
       console.log("reach offline");
@@ -195,7 +256,7 @@ exports.postToConversation = async (req, res) => {
         rawReponse.data.error ||
         "There was an Error try again Please";
 
-      console.log(aiResponse);
+      // console.log(aiResponse);
       if (rawReponse.data.code) {
         aiResponse += rawReponse.data.code;
       }
@@ -207,26 +268,51 @@ exports.postToConversation = async (req, res) => {
 
     const aiResponseParsed = removeCodeBlocks(aiResponse);
 
-    const prompt_memo = await axios.post(
-      "http://localhost:5000/generate_memory",
-      {
-        prompt: req.body.prompt,
-      }
-    );
+    let prompt_memo = "";
 
-    const ai_memo = await axios.post("http://localhost:5000/generate_memory", {
-      prompt: aiResponseParsed,
-    });
-    loadedConversation.memory.push("question: " + prompt_memo.data.summary);
+    if (promptWordCount > 40) {
+      console.log("in summary generation");
+      const rawReponseAPi = await axios.post(
+        "http://localhost:5000/generate_memory",
+        {
+          prompt: req.body.prompt,
+        }
+      );
+      prompt_memo = rawReponseAPi.data.summary[0];
+      loadedConversation.memorySize += wordCount(prompt_memo);
+    } else {
+      prompt_memo = req.body.prompt;
+      // console.log("prompt has: ", promptWordCount);
+      loadedConversation.memorySize += promptWordCount;
+    }
 
-    loadedConversation.memory.push("Answer: " + ai_memo.data.summary);
+    let ai_memo = "";
+
+    if (wordCount(aiResponseParsed) > 30) {
+      const rawApi = await axios.post("http://localhost:5000/generate_memory", {
+        prompt: aiResponseParsed,
+      });
+      ai_memo = rawApi.data.summary[0];
+      // console.log("obj: ");
+      // console.log(ai_memo);
+      loadedConversation.memorySize += wordCount(ai_memo);
+    } else {
+      ai_memo = aiResponseParsed;
+      loadedConversation.memorySize += wordCount(ai_memo);
+    }
+    // console.log("prompt memo is: ", prompt_memo);
+    // console.log("ai memo is ", ai_memo);
+
+    loadedConversation.memory.push("User: " + prompt_memo);
+
+    loadedConversation.memory.push("LLM: " + ai_memo);
 
     loadedConversation.answers.push(aiResponse);
 
     loadedConversation.timestamp = Date.now() / 1000;
     await loadedConversation.save();
   } catch (err) {
-    console.log(err.data);
+    console.log(err);
   }
 };
 
@@ -241,7 +327,7 @@ exports.getConversation = async (req, res) => {
 
   const fileIndicator = loadedConversation.fileID;
   let fileName = "";
-  if (fileIndicator) {
+  if (fileIndicator != "") {
     fileName = await getFileName(fileIndicator);
   }
   // fileName = "casef.js";
@@ -349,6 +435,7 @@ exports.deleteMessage = async (req, res) => {
 //controller to save chat to file in server
 
 exports.regenerateResponse = async (req, res) => {
+  console.log("reach regenerate");
   try {
     const conversationID = req.body.conversationID;
     const userID = req.body.userID;
@@ -374,6 +461,18 @@ exports.regenerateResponse = async (req, res) => {
       questionIndex = 0;
     }
 
+    console.log("raw index is: ", rawIndex);
+
+    console.log("question index is: ", questionIndex);
+
+    console.log("answer index is: ", answerIndex);
+
+    console.log("ai memi before: ", loadedConversation.memory[answerIndex]);
+
+    loadedConversation.memorySize -= wordCount(
+      loadedConversation.memory[answerIndex]
+    );
+
     const prompt =
       loadedConversation.questions[questionIndex] +
       " the user was not pleased with your answer, try to answer better";
@@ -381,6 +480,7 @@ exports.regenerateResponse = async (req, res) => {
     console.log(prompt);
 
     let aiResponse = "";
+    console.log(modelStatus);
 
     if (modelStatus == "offline") {
       res.status(200).json("");
@@ -414,7 +514,11 @@ exports.regenerateResponse = async (req, res) => {
       prompt: aiResponseParsed,
     });
 
-    loadedConversation.memory[rawIndex] = "Answer: " + ai_memo.data.summary;
+    loadedConversation.memory[rawIndex] = "LLM: " + ai_memo.data.summary[0];
+
+    console.log("ai mem after: ", ai_memo.data.summary[0]);
+
+    loadedConversation.memorySize += wordCount(ai_memo.data.summary[0]);
 
     loadedConversation.answers[answerIndex] = aiResponseParsed;
 
@@ -620,6 +724,71 @@ function validateFile(fileData) {
   });
 }
 
+function wordCount(str) {
+  const array = str.trim().split(/\s+/);
+  return array.length;
+}
+
+function handleMemoryOverflow(memory, maxLength) {
+  console.log("memory is oveflowed");
+  let totalLength = 0;
+  let currentIndex = 0;
+
+  for (let i = 0; i < memory.length; i++) {
+    totalLength += wordCount(memory[i]);
+  }
+
+  // Loop until the total length is within the maxLength or we reach the end of memory
+  while (totalLength > maxLength && currentIndex < memory.length) {
+    const currentMessage = memory[currentIndex];
+    const isQuestion = currentIndex % 2 === 0; // Check if it's a question
+
+    let maxWords = isQuestion ? 20 : 15; // Maximum words for question and answer
+    let truncatedMessage = currentMessage
+      .split(/\s+/)
+      .slice(0, maxWords)
+      .join(" ");
+
+    // Update the memory with the truncated message
+    memory[currentIndex] = truncatedMessage;
+
+    // Update total length after truncation
+    totalLength = 0;
+    for (let i = 0; i < memory.length; i++) {
+      totalLength += wordCount(memory[i]);
+    }
+
+    // Move to the next message
+    currentIndex++;
+  }
+}
+
+async function extractFileIDFromName(fileName, userID) {
+  const loadedFile = await File.findOne({ userID: userID, fileName: fileName });
+
+  if (!loadedFile) {
+    return 0;
+  }
+  return loadedFile.fileID;
+}
+
+async function getConversationsCounter(userID) {
+  const loadedConversations = await Conversation.find({ "user.ID": userID });
+
+  // console.log(loadedConversations.length);
+
+  return loadedConversations.length;
+}
+
+// const arr = [
+//   "look just maybe dej ejd erk eif eifn eirfnr firnfi rifnri rif dj fjf fkrf rif frkfk rifk frifk rfik frfik rkfrk rfifn",
+//   "it going be the one who saves me and after all you are et td tr dt rt eie eidfn eifri eifnir",
+//   "you dkf tgkt crfnti trignti9 irfnitngi irngti deje",
+//   "frjnf irnfitgn rfnitgn icnftign rfntign deu eu rfu ruf",
+// ];
+// handleMemoryOverflow(arr, 20);
+// console.log(arr);
+
 // (async () => {
 //   const d = await extractDataFromFile(
 //     "C:\\Users\\yalik\\AI-r Assist\\node.js-server\\libary\\659674eeb90c2146ea6f85fd\\B.java"
@@ -642,3 +811,4 @@ function validateFile(fileData) {
 //   console.log(res.data.response);
 // }
 // caf()
+

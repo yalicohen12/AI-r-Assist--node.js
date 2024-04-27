@@ -9,4 +9,6 @@ router.post("/getFiles", filesController.getFiles);
 
 router.post("/deleteFile", filesController.deleteFile);
 
+router.get("/downloadFile/:fileID", filesController.downloadFile);
+
 module.exports = router;

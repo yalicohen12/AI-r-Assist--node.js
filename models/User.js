@@ -14,13 +14,13 @@ const userSchema = new Schema({
     type: String,
     required: true,
   },
-  role: {
-    type: String,
-    default: "user",
-  },
-  departmentID: {
-    type: Number,
-    default: 12365,
+  // role: {
+  //   type: String,
+  //   default: "user",
+  // },
+  dateOfAccountOpen: {
+    type: Date,
+    default: Date.now,
   },
 });
 

@@ -20,12 +20,17 @@ const conversationSchema = new Schema({
   },
   fileID: {
     type: String,
+    default: "",
   },
   title: {
     type: String,
   },
   timestamp: {
     type: Date,
+  },
+  memorySize: {
+    type: Number,
+    default: 0,
   },
 });
 

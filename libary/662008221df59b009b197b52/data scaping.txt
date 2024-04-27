@@ -1,0 +1,36 @@
+
+
+Question 1: give example of web scraping in payton
+Answer 1: Sure! Here is an example of web scraping in Python using the BeautifulSoup library:
+
+```python
+import requests
+from bs4 import BeautifulSoup
+
+url = 'https://example.com'
+response = requests.get(url)
+
+soup = BeautifulSoup(response.text, 'html.parser')
+
+# Find all the links on the page
+links = soup.find_all('a')
+for link in links:
+    print(link.get('href'))
+```
+
+Question 2: now use this to scape ynet we site
+Answer 2: Sure! Here is an example of web scraping Ynet website using Python and BeautifulSoup:```python
+import requests
+from bs4 import BeautifulSoup
+
+url = 'https://www.ynetnews.com'
+response = requests.get(url)
+
+soup = BeautifulSoup(response.text, 'html.parser')
+
+# Find all the headlines on the page
+headlines = soup.find_all('h1', class_='title')
+for headline in headlines:
+    print(headline.text)
+```
+
