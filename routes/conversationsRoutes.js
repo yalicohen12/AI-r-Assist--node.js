@@ -8,6 +8,8 @@ const upload = multer();
 
 const conversationController = require("../controllers/conversationsController");
 
+const { authenticateToken } = require("../middlewares/authMiddleware");
+
 // route to create a conversation
 router.post(
   "/createConversation",
@@ -22,16 +24,40 @@ router.post(
   conversationController.postToConversation
 );
 
-router.post("/getConversation", conversationController.getConversation);
+router.post(
+  "/getConversation",
+  authenticateToken,
+  conversationController.getConversation
+);
 
-router.post("/getConversations", conversationController.getConversations);
+router.post(
+  "/getConversations",
+  authenticateToken,
+  conversationController.getConversations
+);
 
-router.post("/deleteConversation", conversationController.deleteConversation);
+router.post(
+  "/deleteConversation",
+  authenticateToken,
+  conversationController.deleteConversation
+);
 
-router.post("/deleteMessage", conversationController.deleteMessage);
+router.post(
+  "/deleteMessage",
+  authenticateToken,
+  conversationController.deleteMessage
+);
 
-router.post("/regenerateResponse", conversationController.regenerateResponse);
+router.post(
+  "/regenerateResponse",
+  authenticateToken,
+  conversationController.regenerateResponse
+);
 
-router.post("/renameConversation", conversationController.renameConversation);
+router.post(
+  "/renameConversation",
+  authenticateToken,
+  conversationController.renameConversation
+);
 
 module.exports = router;

@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const dotenv = require("dotenv");
 
 exports.signup = async (req, res) => {
   try {
@@ -25,7 +27,11 @@ exports.signup = async (req, res) => {
 
     user.save();
     console.log("Created user");
-    return res.status(200).json({ userID: userID, name: name });
+    return res.status(200).json({
+      userID: userID,
+      name: name,
+      token: generateAccessToken(userID),
+    });
   } catch {
     (err) => {
       console.log(err);
@@ -55,9 +61,11 @@ exports.login = async (req, res) => {
       return res.status(404).json({ msg: "password  not exsits" });
     }
     console.log("logged in succses");
-    return res
-      .status(200)
-      .json({ userID: loadedUser.ID, name: loadedUser.name });
+    return res.status(200).json({
+      userID: loadedUser.ID,
+      name: loadedUser.name,
+      token: generateAccessToken(loadedUser.id),
+    });
   } catch {
     (err) => {
       return res.status(500).json({ msg: err });
@@ -94,3 +102,12 @@ exports.changePassword = async (req, res) => {
     return res.status(401).json("you did not enter a new password");
   }
 };
+
+function generateAccessToken(userID) {
+  dotenv.config();
+  let secret = process.env.JWT_SECRET;
+
+  return jwt.sign({ userID }, process.env.JWT_SECRET, { expiresIn: "30 days" });
+}
+
+// console.log(generateAccessToken(12345));

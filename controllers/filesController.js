@@ -1,13 +1,10 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
-const Folder = require("../models/Folder");
-const Department = require("../models/Department");
 const fs = require("fs");
 const path = require("path");
 const Conversation = require("../models/Conversation");
 const PDFDocument = require("pdfkit");
 const File = require("../models/File");
-const mime = require("mime-types");
 
 exports.saveConversationToFile = async (req, res) => {
   console.log("saving file...");

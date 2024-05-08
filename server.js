@@ -12,8 +12,6 @@ app.use(cors());
 
 const conversationsRoutes = require("./routes/conversationsRoutes");
 const usersRoutes = require("./routes/usersRoutes");
-const departmentRoutes = require("./routes/departmentRoutes");
-const foldersRoutes = require("./routes/foldersRoutes");
 const filesRoutes = require("./routes/filesRoutes");
 
 // connecting to DB
@@ -29,8 +27,6 @@ mongoose
 // adding routes
 app.use(usersRoutes);
 app.use(conversationsRoutes);
-app.use(departmentRoutes);
-app.use(foldersRoutes);
 app.use(filesRoutes);
 
 // app.listen(port, () => {

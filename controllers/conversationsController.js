@@ -61,7 +61,9 @@ exports.postConversation = async (req, res) => {
     }
   }
 
-  const conversationCounter = await getConversationsCounter(req.body.userID);
+  let conversationCounter = await getConversationsCounter(req.body.userID);
+  conversationCounter = loadedUser.convesationCount;
+  loadedUser.convesationCount += 1;
 
   // console.log(conversationCounter)
 
@@ -111,15 +113,12 @@ exports.postConversation = async (req, res) => {
       fileData: fileData || fileDataFromName,
       anotation: anotation,
     });
-    aiResponse =
-      rawReponse.data.response ||
-      rawReponse.data.answer ||
-      rawReponse.data.error ||
-      rawReponse.data.summary ||
-      rawReponse.data ||
-      "There was an Error try again Please";
-    if (rawReponse.data.code) {
-      aiResponse += "```" + rawReponse.data.code + "```";
+    if (rawReponse.data) {
+      for (const key in rawReponse.data) {
+        aiResponse += rawReponse.data[key];
+      }
+    } else {
+      aiResponse = "There was an Error try again Please";
     }
     console.log("returning to user: ", aiResponse);
     res.status(200).json({
@@ -160,6 +159,8 @@ exports.postConversation = async (req, res) => {
   newConversation.answers.push(aiResponse);
   // newConversation.title = "maintence";
   await newConversation.save();
+
+  await loadedUser.save();
 };
 
 // controller to hanlde new question in conversation
@@ -250,16 +251,15 @@ exports.postToConversation = async (req, res) => {
         fileData: fileData,
         anotation: anotation,
       });
-      aiResponse =
-        rawReponse.data.response ||
-        rawReponse.data.answer ||
-        rawReponse.data.error ||
-        "There was an Error try again Please";
 
-      // console.log(aiResponse);
-      if (rawReponse.data.code) {
-        aiResponse += rawReponse.data.code;
+      if (rawReponse.data) {
+        for (const key in rawReponse.data) {
+          aiResponse += rawReponse.data[key];
+        }
+      } else {
+        aiResponse = "There was an Error try again Please";
       }
+
       res
         .status(200)
         .json({ aiResponse: aiResponse, conversationID: conversationID });
@@ -498,14 +498,14 @@ exports.regenerateResponse = async (req, res) => {
         fileData: "",
         anotation: "",
       });
-      aiResponse =
-        rawReponse.data.response ||
-        rawReponse.data.answer ||
-        rawReponse.data.error ||
-        "There was an Error try again Please";
-      if (rawReponse.data.code) {
-        aiResponse += rawReponse.data.code;
+      if (rawReponse.data) {
+        for (const key in rawReponse.data) {
+          aiResponse += rawReponse.data[key];
+        }
+      } else {
+        aiResponse = "There was an Error try again Please";
       }
+
       res.status(200).json({ aiResponse: aiResponse });
     }
     const aiResponseParsed = removeCodeBlocks(aiResponse);
@@ -777,6 +777,16 @@ async function getConversationsCounter(userID) {
 
   // console.log(loadedConversations.length);
 
+  let name = `chat ${loadedConversations.length}`;
+
+  let isLegal = true;
+
+  for (const conversation of loadedConversations) {
+    if (conversation.title.includes(name)) {
+      isLegal = false;
+      return;
+    }
+  }
   return loadedConversations.length;
 }
 
@@ -811,4 +821,3 @@ async function getConversationsCounter(userID) {
 //   console.log(res.data.response);
 // }
 // caf()
-
