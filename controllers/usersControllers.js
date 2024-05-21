@@ -30,7 +30,7 @@ exports.signup = async (req, res) => {
     return res.status(200).json({
       userID: userID,
       name: name,
-      token: generateAccessToken(userID),
+      token: generateAccessToken(userID.toString()),
     });
   } catch {
     (err) => {
@@ -64,7 +64,7 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       userID: loadedUser.ID,
       name: loadedUser.name,
-      token: generateAccessToken(loadedUser.id),
+      token: generateAccessToken(loadedUser.ID),
     });
   } catch {
     (err) => {
@@ -106,8 +106,9 @@ exports.changePassword = async (req, res) => {
 function generateAccessToken(userID) {
   dotenv.config();
   let secret = process.env.JWT_SECRET;
+  console.log("assignin token for: " , userID)
 
-  return jwt.sign({ userID }, process.env.JWT_SECRET, { expiresIn: "30 days" });
+  return jwt.sign({ userID },"10a859c40a46bbb4d5d51995241eec8f6b7a90415e", { expiresIn: "30 days" });
 }
 
 // console.log(generateAccessToken(12345));

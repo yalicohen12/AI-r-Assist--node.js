@@ -1,27 +1,43 @@
 const jwt = require("jsonwebtoken");
-const dotenv = require("dotenv");
 
 exports.authenticateToken = async (req, res, next) => {
   try {
+    // console.log("valudate")
     const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
 
-    if (token == null) {
-      console.log("no token");
-      return res.status(401).json("no token");
+    if (!authHeader) {
+      // Authorization header is missing
+      console.log("No authorization header");
+      return res.status(401).json("No authorization header");
     }
 
-    const decoded = jwt.verify(token, "10a859c40a46bbb4d5d51995241eec8f6b7a90415e");
+    // Split the Authorization header to get the token
+    const token = authHeader.split(" ")[1];
 
-    // if (req.body.userID != decoded.userID) {
-    //   console.log(" token to userID mismatch");
-    // } else {
-    //   console.log(" token to userID match");
-    // }
+    // console.log(authHeader)
+    // console.log("trying to valid")
 
+    // console.log(token)
+
+    if (!token) {
+      // Token is missing
+      console.log("No token provided");
+      return res.status(401).json("No token provided");
+    }
+
+    // Verify and decode the token
+    const decoded = jwt.verify(
+      token,
+      "10a859c40a46bbb4d5d51995241eec8f6b7a90415e"
+    );
+
+    // console.log("token approvel")
+
+    // If everything is fine, proceed to the next middleware
     next();
   } catch (error) {
     console.log(error);
-    res.status(402).json(error);
+    // Handle JWT errors
+    res.status(401).json({ error: "Unauthorized" });
   }
 };

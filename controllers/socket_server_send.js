@@ -46,6 +46,11 @@ function send_prompt(prompt, memory, anotation, fileData) {
       resolve(aiResponse);
     });
 
+    flaskSocket.on("generatingCode", () => {
+      console.log("emiting code block event")
+      ioServer.emit("generatingCode");
+    });
+
     flaskSocket.on("error", (error) => {
       clearTimeout(timeoutId);
       reject(error);

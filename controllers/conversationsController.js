@@ -8,6 +8,8 @@ const File = require("../models/File");
 const axios = require("axios");
 const send_prompt = require("./socket_server_send");
 
+const util = require("util");
+
 // controller to create a conversation
 exports.postConversation = async (req, res) => {
   const title = "untitled conversation";
@@ -31,15 +33,21 @@ exports.postConversation = async (req, res) => {
 
   let fileDetails = {};
 
+  let fileDataFromName = "";
+
   if (req.file) {
     console.log("notice a new file");
-    if (ensureFileIsNew(req.body.userID, req.file.originalname)) {
+    if (
+      (await ensureFileIsNew(req.body.userID, req.file.originalname)) == true
+    ) {
+      console.log("confrimed its new");
       fileDetails = await saveFile(req.file, req.body.userID);
+    } else {
+      let path = getFilePath(req.body.userID, req.file.originalname);
+      fileDataFromName = await extractDataFromFile(path);
     }
   }
   let fileData = "";
-
-  let fileDataFromName = "";
 
   if (fileDetails.filePath) {
     fileData = await extractDataFromFile(fileDetails.filePath);
@@ -92,6 +100,8 @@ exports.postConversation = async (req, res) => {
 
   newConversation.questions.push(req.body.prompt);
 
+  newConversation.save();
+
   let aiResponse = "";
 
   if (modelStatus === "offline") {
@@ -113,10 +123,9 @@ exports.postConversation = async (req, res) => {
       fileData: fileData || fileDataFromName,
       anotation: anotation,
     });
+
     if (rawReponse.data) {
-      for (const key in rawReponse.data) {
-        aiResponse += rawReponse.data[key];
-      }
+      aiResponse += rawReponse.data;
     } else {
       aiResponse = "There was an Error try again Please";
     }
@@ -253,9 +262,7 @@ exports.postToConversation = async (req, res) => {
       });
 
       if (rawReponse.data) {
-        for (const key in rawReponse.data) {
-          aiResponse += rawReponse.data[key];
-        }
+        aiResponse += rawReponse.data;
       } else {
         aiResponse = "There was an Error try again Please";
       }
@@ -460,6 +467,7 @@ exports.regenerateResponse = async (req, res) => {
     if (answerIndex === 0) {
       questionIndex = 0;
     }
+    console.log(answerIndex);
 
     console.log("raw index is: ", rawIndex);
 
@@ -498,13 +506,14 @@ exports.regenerateResponse = async (req, res) => {
         fileData: "",
         anotation: "",
       });
+
       if (rawReponse.data) {
-        for (const key in rawReponse.data) {
-          aiResponse += rawReponse.data[key];
-        }
+        aiResponse += rawReponse.data;
       } else {
         aiResponse = "There was an Error try again Please";
       }
+
+      console.log(aiResponse);
 
       res.status(200).json({ aiResponse: aiResponse });
     }
@@ -616,6 +625,7 @@ function removeCodeBlocks(text) {
 
 async function saveFile(fileObj, userID) {
   try {
+    console.log("saving file");
     const fileName = fileObj.originalname;
 
     const dirPath = path.join(__dirname, `../libary/${userID}`);
@@ -683,13 +693,12 @@ function getFilePath(userID, fileName) {
   return `C:\\Users\\yalik\\AI-r Assist\\node.js-server\\libary\\${userID}\\${fileName}`;
 }
 
-const util = require("util");
 const readFileAsync = util.promisify(fs.readFile);
 
 async function extractDataFromFile(filePath) {
   try {
     const data = await readFileAsync(filePath, "utf8");
-    console.log("working with the path: ", filePath);
+    console.log("Text file content extracted from: ", filePath);
     // console.log("File data:", data);
     return data;
   } catch (err) {
@@ -697,6 +706,13 @@ async function extractDataFromFile(filePath) {
     return null;
   }
 }
+
+// (async () => {
+//   const filePath =
+//     "C:\\Users\\yalik\\AI-r Assist\\node.js-server\\libary\\659674eeb90c2146ea6f85fd\\sharon.pdf"; // Change this to your file path
+//   const content = await extractDataFromFile(filePath);
+//   console.log(content);
+// })();
 
 function validateFile(fileData) {
   return new Promise((resolve, reject) => {

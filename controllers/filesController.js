@@ -14,6 +14,7 @@ exports.saveConversationToFile = async (req, res) => {
     if (!loadedUser) {
       return res.status(404).json("User not found");
     }
+    console.log(req.body.userID);
 
     const loadedConversation = await Conversation.findOne({
       conversationID: req.body.conversationID,
@@ -32,7 +33,12 @@ exports.saveConversationToFile = async (req, res) => {
 
     if (fileType === "txt") {
       console.log("working with txt");
-      const fileName = `${req.body.title}.txt`;
+      let fileName = `${req.body.title}.txt`;
+      if ((await ensureFileIsNew(req.body.userID, fileName)) == false) {
+        console.log("file is exsisting");
+        fileName = `${req.body.title}${getLastFourDigitsOfTimestamp()}.txt`;
+      }
+
       const dirPath = path.join(__dirname, `../libary/${req.body.userID}`);
       const filePath = path.join(dirPath, fileName);
 
@@ -66,7 +72,10 @@ exports.saveConversationToFile = async (req, res) => {
           .json({ message: "TXT file not created successfully", filePath });
       }
     } else {
-      const fileName = `${req.body.title}.pdf`;
+      let fileName = `${req.body.title}.pdf`;
+      if ((await ensureFileIsNew(req.body.userID, fileName))==false) {
+        fileName = `${req.body.title}${getLastFourDigitsOfTimestamp()}.pdf`;
+      }
       const dirPath = path.join(__dirname, `../libary/${req.body.userID}`);
       const filePath = path.join(dirPath, fileName);
 
@@ -286,3 +295,26 @@ async function handleTxt(introduction, filePath, questions, answers) {
     return false;
   }
 }
+
+async function ensureFileIsNew(userID, fileName) {
+  console.log("userID is: " , userID)
+  const dirPath = path.join(__dirname, `../libary/${userID}`);
+  const filePath = path.join(dirPath, fileName);
+  console.log(filePath);
+
+  try {
+    if (fs.existsSync(filePath)) {
+      console.log(`File '${fileName}' already exists.`);
+      return false; // File already exists
+    } else {
+      console.log(`File '${fileName}' doesn't exist.`);
+      return true; // File doesn't exist
+    }
+  } catch (err) {}
+}
+
+const getLastFourDigitsOfTimestamp = () => {
+  const timestamp = Date.now(); // Get current timestamp in milliseconds
+  const timestampString = timestamp.toString(); // Convert to string
+  return timestampString.slice(-4); // Get the last four digits
+};
