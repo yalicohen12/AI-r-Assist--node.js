@@ -27,7 +27,7 @@ function send_prompt(prompt, memory, anotation, fileData) {
       ioServer.disconnectSockets();
       console.log("node socket client out");
       // reject(new Error("Flask connection timeout"));
-    }, 40000);
+    }, 70000);
 
     // Event handler for receiving generated text chunks
     flaskSocket.on("generated_text", (data) => {

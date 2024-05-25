@@ -444,6 +444,7 @@ exports.deleteMessage = async (req, res) => {
 exports.regenerateResponse = async (req, res) => {
   console.log("reach regenerate");
   try {
+    console.log(req.body)
     const conversationID = req.body.conversationID;
     const userID = req.body.userID;
     const modelStatus = req.body.modelStatus;
@@ -529,7 +530,7 @@ exports.regenerateResponse = async (req, res) => {
 
     loadedConversation.memorySize += wordCount(ai_memo.data.summary[0]);
 
-    loadedConversation.answers[answerIndex] = aiResponseParsed;
+    loadedConversation.answers[answerIndex] = aiResponse;
 
     loadedConversation.timestamp = Date.now() / 1000;
     await loadedConversation.save();

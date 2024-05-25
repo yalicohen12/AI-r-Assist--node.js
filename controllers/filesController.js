@@ -31,6 +31,12 @@ exports.saveConversationToFile = async (req, res) => {
 
     const fileType = req.body.fileType;
 
+    const dir = path.join(__dirname, `../libary/${req.body.userID}`);
+
+
+    await fs.promises.mkdir(dir, { recursive: true }); // Use promises version of mkdir
+
+
     if (fileType === "txt") {
       console.log("working with txt");
       let fileName = `${req.body.title}.txt`;
