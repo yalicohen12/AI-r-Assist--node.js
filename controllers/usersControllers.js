@@ -108,7 +108,7 @@ function generateAccessToken(userID) {
   let secret = process.env.JWT_SECRET;
   console.log("assignin token for: " , userID)
 
-  return jwt.sign({ userID },"10a859c40a46bbb4d5d51995241eec8f6b7a90415e", { expiresIn: "30 days" });
+  return jwt.sign({ userID },"10a859c40a46bbb4d5d51995241eec8f6b7a90415e", { expiresIn: "1 year" });
 }
 
 // console.log(generateAccessToken(12345));

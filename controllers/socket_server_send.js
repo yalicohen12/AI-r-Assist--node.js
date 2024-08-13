@@ -31,6 +31,8 @@ function send_prompt(prompt, memory, anotation, fileData) {
 
     // Event handler for receiving generated text chunks
     flaskSocket.on("generated_text", (data) => {
+      // console.log(data.text_chunk)
+      // console.log("here")
       // process.stdout.write(data.text_chunk);
       clearTimeout(timeoutId);
       aiResponseChunks.push(data.text_chunk);
@@ -44,6 +46,7 @@ function send_prompt(prompt, memory, anotation, fileData) {
       flaskSocket.disconnect();
       console.log("node socket client out");
       resolve(aiResponse);
+      console.log(aiResponse)
     });
 
     flaskSocket.on("generatingCode", () => {
@@ -60,6 +63,6 @@ function send_prompt(prompt, memory, anotation, fileData) {
   });
 }
 
-// send_prompt("write 3 words");
+// send_prompt("write 4 words");
 
 module.exports = send_prompt;

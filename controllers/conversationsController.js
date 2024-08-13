@@ -10,192 +10,155 @@ const send_prompt = require("./socket_server_send");
 
 const util = require("util");
 
-// controller to create a conversation
-exports.postConversation = async (req, res) => {
-  const title = "untitled conversation";
-  console.log("rech post conversation");
-  // console.log(req.file);
+//create conversation hanlder
+exports.APIpostConversation = async (req, res) => {
+  console.log("Received API POST conversation request");
 
-  const anotation = req.body.anotation;
+  const { userID, prompt, modelStatus, fileName, anotation } = req.body;
+
+  if (!userID) {
+    return res.status(401).json({ msg: "User ID not provided" });
+  }
 
   const conversationID = new mongoose.Types.ObjectId();
-
-  const loadedUser = await User.findOne({ ID: req.body.userID });
-
-  if (!req.body.userID) {
-    return res.status(401).json({ msg: "user not sented" });
-  }
+  const loadedUser = await User.findOne({ ID: userID });
   const currentTimestamp = Date.now() / 1000;
 
-  const modelStatus = req.body.modelStatus;
-
-  const fileName = req.body.fileName;
-
   let fileDetails = {};
-
+  let fileData = "";
   let fileDataFromName = "";
 
+  // Handle file upload
   if (req.file) {
-    console.log("notice a new file");
-    if (
-      (await ensureFileIsNew(req.body.userID, req.file.originalname)) == true
-    ) {
-      console.log("confrimed its new");
-      fileDetails = await saveFile(req.file, req.body.userID);
+    console.log("New file detected");
+    if (await ensureFileIsNew(userID, req.file.originalname)) {
+      console.log("Confirmed new file");
+      fileDetails = await saveFile(req.file, userID);
+      fileData = await extractDataFromFile(fileDetails.filePath);
     } else {
-      let path = getFilePath(req.body.userID, req.file.originalname);
-      fileDataFromName = await extractDataFromFile(path);
+      const filePath = getFilePath(userID, req.file.originalname);
+      fileDataFromName = await extractDataFromFile(filePath);
     }
   }
-  let fileData = "";
 
-  if (fileDetails.filePath) {
-    fileData = await extractDataFromFile(fileDetails.filePath);
-  }
-
+  // Handle file lookup if filename is provided but no file is uploaded
   if (!req.file && fileName) {
-    console.log("notice fileName");
-    if (!(await ensureFileIsNew(req.body.userID, fileName))) {
-      let fileP = getFilePath(req.body.userID, fileName);
+    console.log("File name provided");
+    if (!(await ensureFileIsNew(userID, fileName))) {
+      const filePath = getFilePath(userID, fileName);
+      fileDataFromName = await extractDataFromFile(filePath);
 
-      fileDataFromName = await extractDataFromFile(fileP);
-
-      const fileIDFromName = await extractFileIDFromName(
-        fileName,
-        req.body.userID
-      );
-
+      const fileIDFromName = await extractFileIDFromName(fileName, userID);
       fileDetails.filePath = fileIDFromName;
     }
   }
 
-  let conversationCounter = await getConversationsCounter(req.body.userID);
-  conversationCounter = loadedUser.convesationCount;
+  // Handle conversation counter and title
+  const conversationCounter = loadedUser.convesationCount;
   loadedUser.convesationCount += 1;
-
-  // console.log(conversationCounter)
 
   const conversationTitle = `${loadedUser.name} Chat ${
     conversationCounter + 1
-  } `;
-  console.log(conversationTitle);
+  }`;
+  console.log("Conversation Title:", conversationTitle);
 
-  // console.log(fileDetails);
-
-  // console.log("fileD: ", fileData);
-
+  // Create a new conversation
   const newConversation = new Conversation({
-    user: {
-      ID: req.body.userID,
-    },
-    conversationID: conversationID,
-    questions: [],
+    user: { ID: userID },
+    conversationID,
+    questions: [prompt],
     answers: [],
     memory: [],
     title: conversationTitle,
     timestamp: currentTimestamp,
     fileID: fileDetails.fileID,
   });
-  console.log("model status is: ", modelStatus);
 
-  newConversation.questions.push(req.body.prompt);
+  console.log("Model status is:", modelStatus);
 
-  newConversation.save();
-
+  // Handle AI response
   let aiResponse = "";
+  const requestData = {
+    prompt,
+    memory: [],
+    anotation,
+    fileData: fileData || fileDataFromName,
+  };
 
   if (modelStatus === "offline") {
-    console.log("reach offline");
-    res
-      .status(200)
-      .json({ conversationID: conversationID, title: conversationTitle });
-    aiResponse = await send_prompt(
-      req.body.prompt,
-      [],
-      anotation,
-      fileData || fileDataFromName
+    console.log("Using offline model");
+    const response = await axios.post(
+      "http://localhost:5000/offlineAPIResponse",
+      requestData
     );
+    aiResponse = response.data;
   } else {
-    console.log("reach online");
-    const rawReponse = await axios.post("http://localhost:5000/APIResponse", {
-      prompt: req.body.prompt,
-      memory: [],
-      fileData: fileData || fileDataFromName,
-      anotation: anotation,
-    });
-
-    if (rawReponse.data) {
-      aiResponse += rawReponse.data;
-    } else {
-      aiResponse = "There was an Error try again Please";
-    }
-    console.log("returning to user: ", aiResponse);
-    res.status(200).json({
-      aiResponse: aiResponse,
-      conversationID: conversationID,
-      title: conversationTitle,
-    });
-  }
-  let prompt_memo = "";
-  if (wordCount(req.body.prompt) > 40) {
-    prompt_memo = await axios.post("http://localhost:5000/generate_memory", {
-      prompt: req.body.prompt,
-    });
-    console.log(prompt_memo.data);
-    newConversation.memorySize += wordCount(prompt_memo.data.summary);
-  } else {
-    prompt_memo = req.body.prompt;
-    newConversation.memorySize += wordCount(req.body.prompt);
+    console.log("Using online model");
+    const response = await axios.post(
+      "http://localhost:5000/APIResponse",
+      requestData
+    );
+    aiResponse = response.data || "There was an error, please try again.";
   }
 
-  let ai_memo = "";
+  res.status(200).json({
+    aiResponse,
+    conversationID,
+    title: conversationTitle,
+  });
+
+  // Handle memory summary for prompt and AI response
+  let promptMemo = "";
+  if (wordCount(prompt) > 40) {
+    const summaryResponse = await axios.post(
+      "http://localhost:5000/generate_memory",
+      { prompt }
+    );
+    promptMemo = summaryResponse.data.summary[0];
+    newConversation.memorySize += wordCount(promptMemo);
+  } else {
+    promptMemo = prompt;
+    newConversation.memorySize += wordCount(prompt);
+  }
+
+  let aiMemo = "";
   if (wordCount(aiResponse) > 30) {
-    ai_memo = await axios.post("http://localhost:5000/generate_memory", {
-      prompt: aiResponse,
-    });
+    const summaryResponse = await axios.post(
+      "http://localhost:5000/generate_memory",
+      { prompt: aiResponse }
+    );
+    aiMemo = summaryResponse.data.summary;
+    // console.log("memory input: ", aiResponse);
+    // console.log("memory output: ", aiMemo);
+    newConversation.memorySize += wordCount(aiMemo);
   } else {
-    ai_memo = aiResponse;
+    aiMemo = aiResponse;
+    newConversation.memorySize += wordCount(aiMemo);
   }
 
-  newConversation.memory.push(
-    "User: " + (prompt_memo.data ? prompt_memo.data.summary : prompt_memo)
-  );
-
-  newConversation.memory.push(
-    "LLM: " + (ai_memo.data ? ai_memo.data.summary : ai_memo)
-  );
-
+  // Update conversation memory and answers
+  newConversation.memory.push(`User: ${promptMemo}`);
+  newConversation.memory.push(`LLM: ${aiMemo}`);
   newConversation.answers.push(aiResponse);
-  // newConversation.title = "maintence";
-  await newConversation.save();
 
+  await newConversation.save();
   await loadedUser.save();
 };
 
-// controller to hanlde new question in conversation
-exports.postToConversation = async (req, res) => {
-  console.log("rech post to");
+// update conversation handler
+exports.APIpostToConversation = async (req, res) => {
+  console.log("rech API post to");
   try {
-    const conversationID = req.body.conversationID;
-    const userID = req.body.userID;
-    const prompt = req.body.prompt;
-
-    const modelStatus = req.body.modelStatus;
-
-    const fileName = req.body.fileName;
-
-    const anotation = req.body.anotation;
+    const { conversationID, userID, prompt, modelStatus, fileName, anotation } =
+      req.body;
 
     const loadedConversation = await Conversation.findOne({ conversationID });
-
     if (!loadedConversation) {
-      return res.status(404).json("conversation not found");
+      return res.status(404).json("Conversation not found");
     }
 
     let fileID = "";
     let fileData = "";
-
-    let fileDetails = {};
 
     const promptWordCount = wordCount(prompt);
 
@@ -203,123 +166,186 @@ exports.postToConversation = async (req, res) => {
       handleMemoryOverflow(loadedConversation.memory);
     }
 
+    // Handle file upload if present
     if (req.file) {
-      console.log("notice the file");
-      if (await ensureFileIsNew(req.body.userID, req.file.originalname)) {
-        fileDetails = await saveFile(req.file, req.body.userID);
-
+      console.log("File detected in request");
+      if (await ensureFileIsNew(userID, req.file.originalname)) {
+        const fileDetails = await saveFile(req.file, userID);
         fileID = fileDetails.fileID;
-
         loadedConversation.fileID = fileID;
-
         fileData = await extractDataFromFile(fileDetails.filePath);
       }
     }
-    if (!req.file && fileName) {
-      console.log("notice fileName");
-      if (!(await ensureFileIsNew(req.body.userID, fileName))) {
-        let fileP = getFilePath(req.body.userID, fileName);
 
-        fileData = await extractDataFromFile(fileP);
+    // Handle file lookup if filename is provided but no file is uploaded
+    if (!req.file && fileName) {
+      console.log("File name provided");
+      if (!(await ensureFileIsNew(userID, fileName))) {
+        const filePath = getFilePath(userID, fileName);
+        fileData = await extractDataFromFile(filePath);
       }
     }
-    let fileWordCount = 0;
-    if (fileData.length > 2) {
-      fileWordCount = wordCount(fileData);
-    }
 
-    if (!loadedConversation) {
-      console.log("conversation not found");
-      return res.status(404).json({ error: "Conversation not found" });
-    }
+    const fileWordCount = fileData ? wordCount(fileData) : 0;
 
     loadedConversation.questions.push(prompt);
 
-    // loadedConversation.fileID = fileID.toString();
-
     let aiResponse = "";
+    const requestData = {
+      prompt,
+      memory: loadedConversation.memory,
+      fileData,
+      anotation,
+    };
 
-    // console.log("sending file data of: ", fileData);
-
+    // Handle online or offline model status
     if (modelStatus === "offline") {
-      console.log("reach offline");
-      res
-        .status(200)
-        .json({ conversationID: loadedConversation.conversationID });
-      aiResponse = await send_prompt(
-        prompt,
-        loadedConversation.memory,
-        anotation,
-        fileData
+      console.log("Using offline model");
+      const response = await axios.post(
+        "http://localhost:5000/offlineAPIResponse",
+        requestData
       );
+      aiResponse = response.data;
     } else {
-      console.log("reach online");
-      const rawReponse = await axios.post("http://localhost:5000/APIResponse", {
-        prompt: req.body.prompt,
-        memory: loadedConversation.memory,
-        fileData: fileData,
-        anotation: anotation,
-      });
-
-      if (rawReponse.data) {
-        aiResponse += rawReponse.data;
-      } else {
-        aiResponse = "There was an Error try again Please";
-      }
-
-      res
-        .status(200)
-        .json({ aiResponse: aiResponse, conversationID: conversationID });
+      console.log("Using online model");
+      const response = await axios.post(
+        "http://localhost:5000/APIResponse",
+        requestData
+      );
+      aiResponse = response.data || "There was an Error. Please try again.";
     }
-    // console.log("ai is: ", aiResponse);
+
+    res.status(200).json({ aiResponse, conversationID });
 
     const aiResponseParsed = removeCodeBlocks(aiResponse);
 
-    let prompt_memo = "";
+    let promptMemo =
+      promptWordCount > 40
+        ? (
+            await axios.post("http://localhost:5000/generate_memory", {
+              prompt,
+            })
+          ).data.summary[0]
+        : prompt;
 
-    if (promptWordCount > 40) {
-      console.log("in summary generation");
-      const rawReponseAPi = await axios.post(
-        "http://localhost:5000/generate_memory",
-        {
-          prompt: req.body.prompt,
-        }
-      );
-      prompt_memo = rawReponseAPi.data.summary[0];
-      loadedConversation.memorySize += wordCount(prompt_memo);
-    } else {
-      prompt_memo = req.body.prompt;
-      // console.log("prompt has: ", promptWordCount);
-      loadedConversation.memorySize += promptWordCount;
-    }
+    loadedConversation.memorySize += wordCount(promptMemo);
 
-    let ai_memo = "";
+    let aiMemo =
+      wordCount(aiResponseParsed) > 30
+        ? (
+            await axios.post("http://localhost:5000/generate_memory", {
+              prompt: aiResponseParsed,
+            })
+          ).data.summary
+        : aiResponseParsed;
 
-    if (wordCount(aiResponseParsed) > 30) {
-      const rawApi = await axios.post("http://localhost:5000/generate_memory", {
-        prompt: aiResponseParsed,
-      });
-      ai_memo = rawApi.data.summary[0];
-      // console.log("obj: ");
-      // console.log(ai_memo);
-      loadedConversation.memorySize += wordCount(ai_memo);
-    } else {
-      ai_memo = aiResponseParsed;
-      loadedConversation.memorySize += wordCount(ai_memo);
-    }
-    // console.log("prompt memo is: ", prompt_memo);
-    // console.log("ai memo is ", ai_memo);
+    // console.log("memory input: ", aiResponseParsed);
+    // console.log("memory output: ", aiMemo);
 
-    loadedConversation.memory.push("User: " + prompt_memo);
+    loadedConversation.memorySize += wordCount(aiMemo);
 
-    loadedConversation.memory.push("LLM: " + ai_memo);
-
+    loadedConversation.memory.push(`User: ${promptMemo}`);
+    loadedConversation.memory.push(`LLM: ${aiMemo}`);
     loadedConversation.answers.push(aiResponse);
-
     loadedConversation.timestamp = Date.now() / 1000;
+
     await loadedConversation.save();
   } catch (err) {
     console.log(err);
+  }
+};
+
+exports.APIregenerateResponse = async (req, res) => {
+  console.log("Received regenerate response request");
+
+  try {
+    const { conversationID, userID, modelStatus, index: rawIndex } = req.body;
+
+    console.log(req.body);
+
+    const loadedConversation = await Conversation.findOne({
+      conversationID,
+      "user.ID": userID,
+    });
+
+    if (!loadedConversation) {
+      return res.status(404).json("Conversation not found");
+    }
+
+    if (rawIndex == null) {
+      return res.status(400).json("Index not provided");
+    }
+
+    const answerIndex = Math.floor(rawIndex / 2);
+    const questionIndex = answerIndex;
+
+    console.log("Answer index:", answerIndex);
+    console.log("Question index:", questionIndex);
+
+    // Adjust memory size by removing the previous answer's word count
+    loadedConversation.memorySize -= wordCount(
+      loadedConversation.memory[rawIndex]
+    );
+
+    const prompt = `${loadedConversation.questions[questionIndex]} the user was not pleased with your answer, try to answer better`;
+
+    console.log("Prompt:", prompt);
+
+    // Initialize AI response
+    let aiResponse = "";
+
+    const requestData = {
+      prompt,
+      memory: loadedConversation.memory.slice(0, rawIndex),
+      fileData: "",
+      anotation: "",
+    };
+
+    // Generate AI response based on model status
+    if (modelStatus === "offline") {
+      console.log("Using offline model");
+      const response = await axios.post(
+        "http://localhost:5000/offlineAPIResponse",
+        requestData
+      );
+      aiResponse = response.data;
+    } else {
+      console.log("Using online model");
+      const response = await axios.post(
+        "http://localhost:5000/APIResponse",
+        requestData
+      );
+      aiResponse = response.data || "There was an Error, please try again.";
+    }
+
+    console.log("AI Response:", aiResponse);
+
+    // Send AI response to client
+    res.status(200).json({ aiResponse });
+
+    // Process AI response for memory update
+    const aiResponseParsed = removeCodeBlocks(aiResponse);
+    const summaryResponse = await axios.post(
+      "http://localhost:5000/generate_memory",
+      {
+        prompt: aiResponseParsed,
+      }
+    );
+
+    const aiSummary = summaryResponse.data.summary;
+
+    console.log("AI Memory after regeneration:", aiSummary);
+
+    // Update conversation memory and answers
+    loadedConversation.memory[rawIndex] = `LLM: ${aiSummary}`;
+    loadedConversation.memorySize += wordCount(aiSummary);
+    loadedConversation.answers[answerIndex] = aiResponse;
+    loadedConversation.timestamp = Date.now() / 1000;
+
+    await loadedConversation.save();
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -329,6 +355,7 @@ exports.getConversation = async (req, res) => {
   if (!loadedConversation) {
     return res.status(404).json({ error: "Conversation not found" });
   }
+  const loadedUser = await User.findOne({ ID: loadedConversation.user.ID  || "You"});
   const questions = loadedConversation.questions || [];
   const answers = loadedConversation.answers || [];
 
@@ -348,7 +375,7 @@ exports.getConversation = async (req, res) => {
   for (let i = 0; i < minLength; i++) {
     const question = questions[i];
     const answer = answers[i];
-    messages.push({ sender: "You", value: question });
+    messages.push({ sender: loadedUser.name, value: question });
     messages.push({ sender: "LLama", value: answer });
   }
   return res.status(200).json({ messages: messages, fileName });
@@ -356,6 +383,7 @@ exports.getConversation = async (req, res) => {
 
 //controller to get conversations
 exports.getConversations = async (req, res) => {
+  // console.log("get conversations")
   const userID = req.body.userID;
   if (!userID) {
     return res.status(400).json({ msg: "bad request" });
@@ -441,105 +469,6 @@ exports.deleteMessage = async (req, res) => {
 
 //controller to save chat to file in server
 
-exports.regenerateResponse = async (req, res) => {
-  console.log("reach regenerate");
-  try {
-    console.log(req.body)
-    const conversationID = req.body.conversationID;
-    const userID = req.body.userID;
-    const modelStatus = req.body.modelStatus;
-    const loadedConversation = await Conversation.findOne({
-      conversationID: req.body.conversationID,
-      "user.ID": req.body.userID,
-    });
-
-    if (!loadedConversation) {
-      return res.status(401).json("conversation not found");
-    }
-    const rawIndex = req.body.index;
-
-    if (!rawIndex) {
-      return res.status(400).json("index not found");
-    }
-
-    const answerIndex = Math.floor(req.body.index / 2);
-
-    let questionIndex = answerIndex;
-    if (answerIndex === 0) {
-      questionIndex = 0;
-    }
-    console.log(answerIndex);
-
-    console.log("raw index is: ", rawIndex);
-
-    console.log("question index is: ", questionIndex);
-
-    console.log("answer index is: ", answerIndex);
-
-    console.log("ai memi before: ", loadedConversation.memory[answerIndex]);
-
-    loadedConversation.memorySize -= wordCount(
-      loadedConversation.memory[answerIndex]
-    );
-
-    const prompt =
-      loadedConversation.questions[questionIndex] +
-      " the user was not pleased with your answer, try to answer better";
-
-    console.log(prompt);
-
-    let aiResponse = "";
-    console.log(modelStatus);
-
-    if (modelStatus == "offline") {
-      res.status(200).json("");
-
-      aiResponse = await send_prompt(
-        prompt,
-        loadedConversation.memory.slice(0, rawIndex),
-        "",
-        ""
-      );
-    } else {
-      const rawReponse = await axios.post("http://localhost:5000/APIResponse", {
-        prompt: prompt,
-        memory: loadedConversation.memory.slice(0, rawIndex),
-        fileData: "",
-        anotation: "",
-      });
-
-      if (rawReponse.data) {
-        aiResponse += rawReponse.data;
-      } else {
-        aiResponse = "There was an Error try again Please";
-      }
-
-      console.log(aiResponse);
-
-      res.status(200).json({ aiResponse: aiResponse });
-    }
-    const aiResponseParsed = removeCodeBlocks(aiResponse);
-
-    const ai_memo = await axios.post("http://localhost:5000/generate_memory", {
-      prompt: aiResponseParsed,
-    });
-
-    loadedConversation.memory[rawIndex] = "LLM: " + ai_memo.data.summary[0];
-
-    console.log("ai mem after: ", ai_memo.data.summary[0]);
-
-    loadedConversation.memorySize += wordCount(ai_memo.data.summary[0]);
-
-    loadedConversation.answers[answerIndex] = aiResponse;
-
-    loadedConversation.timestamp = Date.now() / 1000;
-    await loadedConversation.save();
-  } catch (err) {
-    console.log(err);
-    return res.status(401).json(err);
-  }
-};
-
 exports.saveConversation = async (req, res) => {
   try {
     const loadedConversation = await Conversation.findOne({
@@ -615,13 +544,7 @@ exports.renameConversation = async (req, res) => {
 };
 
 function removeCodeBlocks(text) {
-  const parts = text.split("```");
-
-  const filteredParts = parts.filter((part, index) => index % 2 === 0);
-
-  const cleanedResponse = filteredParts.join("");
-
-  return cleanedResponse;
+  return text.replace(/```[\s\S]*?```/g, "");
 }
 
 async function saveFile(fileObj, userID) {
@@ -806,35 +729,3 @@ async function getConversationsCounter(userID) {
   }
   return loadedConversations.length;
 }
-
-// const arr = [
-//   "look just maybe dej ejd erk eif eifn eirfnr firnfi rifnri rif dj fjf fkrf rif frkfk rifk frifk rfik frfik rkfrk rfifn",
-//   "it going be the one who saves me and after all you are et td tr dt rt eie eidfn eifri eifnir",
-//   "you dkf tgkt crfnti trignti9 irfnitngi irngti deje",
-//   "frjnf irnfitgn rfnitgn icnftign rfntign deu eu rfu ruf",
-// ];
-// handleMemoryOverflow(arr, 20);
-// console.log(arr);
-
-// (async () => {
-//   const d = await extractDataFromFile(
-//     "C:\\Users\\yalik\\AI-r Assist\\node.js-server\\libary\\659674eeb90c2146ea6f85fd\\B.java"
-//   );
-//   console.log(d);
-// })();
-
-// async function caf() {
-//   memory = ["when was the first ever moon land?"];
-
-//   prompte = "write python function to iterate a stack";
-
-//   const res = await axios.post("http://localhost:5000/APIResponse", {
-//     prompt: prompte,
-//     memory: memory,
-//     fileData: "",
-//     anotation: "",
-//   });
-
-//   console.log(res.data.response);
-// }
-// caf()

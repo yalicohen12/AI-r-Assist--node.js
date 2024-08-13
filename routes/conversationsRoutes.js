@@ -11,18 +11,30 @@ const conversationController = require("../controllers/conversationsController")
 const { authenticateToken } = require("../middlewares/authMiddleware");
 
 // route to create a conversation
+// router.post(
+//   "/createConversation",
+//   upload.single("file"),
+//   conversationController.postConversation
+// );
+
 router.post(
-  "/createConversation",
+  "/createAPIConversation",
   upload.single("file"),
-  conversationController.postConversation
+  conversationController.APIpostConversation
+);
+
+router.post(
+  "/postToAPIConversation",
+  upload.single("file"),
+  conversationController.APIpostToConversation
 );
 
 // route to add question to conversation
-router.post(
-  "/postToConversation",
-  upload.single("file"),
-  conversationController.postToConversation
-);
+// router.post(
+//   "/postToConversation",
+//   upload.single("file"),
+//   conversationController.postToConversation
+// );
 
 router.post(
   "/getConversation",
@@ -48,10 +60,16 @@ router.post(
   conversationController.deleteMessage
 );
 
+// router.post(
+//   "/regenerateResponse",
+//   // authenticateToken,
+//   conversationController.regenerateResponse
+// );
+
 router.post(
-  "/regenerateResponse",
-  authenticateToken,
-  conversationController.regenerateResponse
+  "/APIRegenerateResponse",
+  authenticateToken ,
+  conversationController.APIregenerateResponse
 );
 
 router.post(

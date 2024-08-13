@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 
 exports.authenticateToken = async (req, res, next) => {
+  console.log("autheting");
+
   try {
     // console.log("valudate")
     const authHeader = req.headers["authorization"];
@@ -31,13 +33,21 @@ exports.authenticateToken = async (req, res, next) => {
       "10a859c40a46bbb4d5d51995241eec8f6b7a90415e"
     );
 
-    // console.log("token approvel")
+    console.log("token approvel");
 
-    // If everything is fine, proceed to the next middleware
     next();
+    
   } catch (error) {
-    console.log(error);
     // Handle JWT errors
-    res.status(401).json({ error: "Unauthorized" });
+    console.log(error);
+    if (error.name === "TokenExpiredError") {
+      console.log("Token expired");
+      return res
+        .status(401)
+        .json({ message: "Token expired, please log in again" });
+    }
+    else {
+      res.status(401).json({ error: "Unauthorized" });
+    }
   }
 };
